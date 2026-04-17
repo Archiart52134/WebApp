@@ -4072,7 +4072,9 @@
       // PWA Service Worker
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/service-worker.js');
+          navigator.serviceWorker.register('./service-worker.js')
+            .then(r => console.log('SW registered:', r.scope))
+            .catch(e => console.warn('SW error:', e));
         });
       }
     </script>
