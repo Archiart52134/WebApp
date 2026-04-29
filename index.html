@@ -2868,19 +2868,20 @@
         const dbSet = window._dbSet;
         const data = { type };
         if (type === 'pickup') {
-          // Circle is centered at the tapped point; marker appears at a random spot inside
-          data.pickupCenterLat = lat;
-          data.pickupCenterLng = lng;
+          // Marker is exactly at the tapped point; circle center is random (marker always inside)
+          data.lat = lat;
+          data.lng = lng;
           data.pickupRadius = pickupZoneRadius;
           if (pickupZoneRadius > 0) {
             const pt = randomPointInCircle(lat, lng, pickupZoneRadius);
-            data.lat = pt.lat;
-            data.lng = pt.lng;
+            data.pickupCenterLat = pt.lat;
+            data.pickupCenterLng = pt.lng;
+            drawPickupZone(pt.lat, pt.lng, pickupZoneRadius);
           } else {
-            data.lat = lat;
-            data.lng = lng;
+            data.pickupCenterLat = lat;
+            data.pickupCenterLng = lng;
+            drawPickupZone(lat, lng, 0);
           }
-          drawPickupZone(lat, lng, pickupZoneRadius);
         } else {
           data.lat = lat;
           data.lng = lng;
@@ -2940,12 +2941,11 @@
               marker.on("dragend", function (e) {
                 const newPos = e.target.getLatLng();
                 if (type === 'pickup') {
-                  // Move circle center by the same delta as the marker drag
-                  const oldPos = { lat: loc.lat, lng: loc.lng };
-                  const dLat = newPos.lat - oldPos.lat;
-                  const dLng = newPos.lng - oldPos.lng;
-                  const newCLat = (pickupCenterLat || oldPos.lat) + dLat;
-                  const newCLng = (pickupCenterLng || oldPos.lng) + dLng;
+                  // Marker moves to new exact position; circle center shifts by same delta
+                  const dLat = newPos.lat - loc.lat;
+                  const dLng = newPos.lng - loc.lng;
+                  const newCLat = (pickupCenterLat || newPos.lat) + dLat;
+                  const newCLng = (pickupCenterLng || newPos.lng) + dLng;
                   drawPickupZone(newCLat, newCLng, pickupZoneRadius);
                   const db = window._db;
                   window._dbUpdate(window._dbRef(db, 'locations/pickup'), {
@@ -3034,15 +3034,21 @@
       function setPickupRadius(radius) {
         hidePickupZoneMenu();
         pickupZoneRadius = radius;
-        if (!pickupCenterLat) return;
-        drawPickupZone(pickupCenterLat, pickupCenterLng, radius);
-        // Generate new random marker position inside the resized circle
+        const m = locationMarkers['pickup'];
+        if (!m) return;
+        const pos = m.getLatLng();
         const db = window._db;
         const update = { pickupRadius: radius };
         if (radius > 0) {
-          const pt = randomPointInCircle(pickupCenterLat, pickupCenterLng, radius);
-          update.lat = pt.lat;
-          update.lng = pt.lng;
+          // Circle center is random around the fixed marker position
+          const pt = randomPointInCircle(pos.lat, pos.lng, radius);
+          update.pickupCenterLat = pt.lat;
+          update.pickupCenterLng = pt.lng;
+          drawPickupZone(pt.lat, pt.lng, radius);
+        } else {
+          update.pickupCenterLat = pos.lat;
+          update.pickupCenterLng = pos.lng;
+          drawPickupZone(pos.lat, pos.lng, 0);
         }
         window._dbUpdate(window._dbRef(db, 'locations/pickup'), update);
       }
