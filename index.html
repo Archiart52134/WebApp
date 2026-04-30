@@ -3269,7 +3269,7 @@
         return sharedAudioCtx;
       }
 
-      // Called explicitly from join buttons (guaranteed user gesture)
+      // Unlock audio — safe to call multiple times, only runs once
       function initAudio() {
         if (audioUnlocked) return;
         audioUnlocked = true;
@@ -3290,6 +3290,11 @@
           sirenAudio.currentTime = 0;
         }).catch(() => {});
       }
+
+      // Fallback: catch ANY first user interaction (covers session restore auto-login)
+      ['touchstart', 'touchend', 'click', 'keydown'].forEach(ev =>
+        document.addEventListener(ev, initAudio, { once: true, passive: true })
+      );
 
       function showAlertOverlay(title, msg) {
         document.getElementById('alert-overlay-title').textContent = title;
