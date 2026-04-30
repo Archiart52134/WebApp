@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jagd-flucht-v1';
+const CACHE_NAME = 'jagd-flucht-v8';
 const ASSETS = [
   '/index.html',
   '/manifest.json'

@@ -4456,6 +4456,8 @@
 
       window.addEventListener("firebase-ready", () => {
         console.log("Firebase connected");
+        const overlay = document.getElementById('setup-overlay');
+        if (overlay) overlay.style.display = 'none';
         tryRestoreSession();
       });
 
