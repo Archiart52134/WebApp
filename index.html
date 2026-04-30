@@ -2283,6 +2283,12 @@
       let zoneEditMode = false;
       let myRealtimeWatch = null;
       let alertSirenCtx = null;
+      // Display throttle intervals (ms) — set from gameState sliders
+      let dispIntervalOwnRunner  = 10000; // runners seeing own team
+      let dispIntervalOwnChaser  = 10000; // chasers seeing own team
+      let dispIntervalOppRunner  = 30000; // chasers seeing runners
+      let dispIntervalOppChaser  = 30000; // runners seeing chasers
+      const playerMarkerLastUpdate = {}; // id → timestamp of last visual update
       let updateIntervalMs = 30000;
       let gameActive = false;
       let gameStartTime = null;
@@ -3400,13 +3406,28 @@
 
         Object.entries(data).forEach(([id, p]) => {
           if (!p.online || !p.lat || !p.lng) {
-            // If marker exists for offline player, remove it
             if (playerMarkers[id]) {
               map.removeLayer(playerMarkers[id]);
               delete playerMarkers[id];
             }
             return;
           }
+
+          // Host sees everyone in real-time (no throttle).
+          // Players: throttle marker updates by the relevant slider interval.
+          if (myTeam !== 'host' && id !== myId) {
+            const isOwn = p.team === myTeam;
+            let interval;
+            if (isOwn) {
+              interval = myTeam === 'runner' ? dispIntervalOwnRunner : dispIntervalOwnChaser;
+            } else {
+              // Opponent: use the interval set for that team's visibility
+              interval = p.team === 'runner' ? dispIntervalOppRunner : dispIntervalOppChaser;
+            }
+            const lastUpd = playerMarkerLastUpdate[id] || 0;
+            if (Date.now() - lastUpd < interval) return; // skip until interval elapsed
+          }
+          playerMarkerLastUpdate[id] = Date.now();
 
           if (playerMarkers[id]) {
             playerMarkers[id].setLatLng([p.lat, p.lng]);
@@ -3444,12 +3465,18 @@
           const state = snapshot.val();
           if (!state) return;
 
-          // Per-team intervals for players (own update frequency)
+          // Per-team intervals for players (own GPS send frequency)
           if (myTeam === "runner" && state.visOwnRunner) {
             updateIntervalMs = state.visOwnRunner * 1000;
           } else if (myTeam === "chaser" && state.visOwnChaser) {
             updateIntervalMs = state.visOwnChaser * 1000;
           }
+
+          // Store display intervals for marker throttling in updatePlayerMarkers
+          if (state.intervalRunner)  dispIntervalOppRunner = state.intervalRunner * 1000;
+          if (state.intervalChaser)  dispIntervalOppChaser = state.intervalChaser * 1000;
+          if (state.visOwnRunner)    dispIntervalOwnRunner = state.visOwnRunner * 1000;
+          if (state.visOwnChaser)    dispIntervalOwnChaser = state.visOwnChaser * 1000;
 
           // Echtzeit mode — applies to ALL players
           if (state.realtimeMode !== undefined) {
