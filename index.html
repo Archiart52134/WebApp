@@ -2412,6 +2412,7 @@
       }
 
       function joinLobby() {
+        initAudio(); // unlock audio on guaranteed user gesture
         const nameEl = document.getElementById('lobby-name');
         myName = nameEl.value.trim();
         if (!myName) { toast('Bitte gib deinen Namen ein'); return; }
@@ -2475,6 +2476,7 @@
       }
 
       function joinAsHost() {
+        initAudio(); // unlock audio on guaranteed user gesture
         const nameEl = document.getElementById('lobby-name');
         myName = nameEl.value.trim() || 'Spielleiter';
         if (!window._firebaseReady) { toast('Firebase nicht verbunden'); return; }
@@ -3250,13 +3252,15 @@
         });
       }
 
-      // ── Unified audio unlock for mobile ──────────────────────────────
+      // ── Audio system ─────────────────────────────────────────────────
       let sirenAudio = new Audio('./siren.mp3');
       sirenAudio.loop = true;
       sirenAudio.volume = 1.0;
       sirenAudio.preload = 'auto';
 
       let sharedAudioCtx = null;
+      let audioUnlocked = false;
+
       function getAudioCtx() {
         if (!sharedAudioCtx) {
           sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -3265,18 +3269,27 @@
         return sharedAudioCtx;
       }
 
-      // On first user gesture: unlock both AudioContext and the siren Audio element
-      function _unlockAudio() {
-        // Unlock AudioContext (needed for chat beep)
-        try { getAudioCtx(); } catch(e) {}
+      // Called explicitly from join buttons (guaranteed user gesture)
+      function initAudio() {
+        if (audioUnlocked) return;
+        audioUnlocked = true;
+        try {
+          const ctx = getAudioCtx();
+          // Keep AudioContext alive with a permanent silent oscillator
+          // (prevents iOS from auto-suspending it between sounds)
+          const silentGain = ctx.createGain();
+          silentGain.gain.value = 0;
+          silentGain.connect(ctx.destination);
+          const silentOsc = ctx.createOscillator();
+          silentOsc.connect(silentGain);
+          silentOsc.start();
+        } catch(e) {}
         // Unlock siren MP3
         sirenAudio.play().then(() => {
           sirenAudio.pause();
           sirenAudio.currentTime = 0;
         }).catch(() => {});
       }
-      document.addEventListener('touchstart', _unlockAudio, { once: true });
-      document.addEventListener('click',      _unlockAudio, { once: true });
 
       function showAlertOverlay(title, msg) {
         document.getElementById('alert-overlay-title').textContent = title;
