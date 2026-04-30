@@ -3336,13 +3336,17 @@
           }
         } catch(e) {}
 
-        // Unlock HTML Audio (siren MP3) — must be in gesture frame, done once
+        // Unlock HTML Audio (siren MP3) silently — muted so nothing is heard
         if (!sirenUnlocked) {
           sirenUnlocked = true;
+          sirenAudio.muted = true;
           sirenAudio.play().then(() => {
             sirenAudio.pause();
             sirenAudio.currentTime = 0;
-          }).catch(() => {});
+            sirenAudio.muted = false;
+          }).catch(() => {
+            sirenAudio.muted = false;
+          });
         }
       }
 
@@ -3351,15 +3355,11 @@
         document.addEventListener(ev, initAudio, { passive: true })
       );
 
-      // When app comes back to foreground: resume context immediately
+      // When app comes back to foreground: only resume AudioContext (never touch siren here)
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) return;
         if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
           sharedAudioCtx.resume().catch(() => {});
-        }
-        // Re-unlock siren in case it was released (iOS releases Audio on background)
-        if (sirenUnlocked) {
-          sirenAudio.play().then(() => { sirenAudio.pause(); sirenAudio.currentTime = 0; }).catch(() => {});
         }
       });
 
