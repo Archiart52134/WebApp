@@ -3220,40 +3220,43 @@
       }
 
       // Regular team chat notification — two quick high pings
-      function playChatSound() {
+      async function playChatSound() {
         if (chatSoundMuted) return;
         try {
           const ctx = getAudioCtx();
           if (!ctx) return;
+          if (ctx.state !== 'running') await ctx.resume();
+          const base = ctx.currentTime + 0.05; // 50 ms buffer so resume finishes
           [880, 1046].forEach((freq, i) => {
             const o = ctx.createOscillator();
             const g = ctx.createGain();
             o.connect(g); g.connect(ctx.destination);
             o.frequency.value = freq; o.type = 'sine';
-            g.gain.setValueAtTime(0.18, ctx.currentTime + i * 0.12);
-            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.1);
-            o.start(ctx.currentTime + i * 0.12);
-            o.stop(ctx.currentTime + i * 0.12 + 0.12);
+            const t = base + i * 0.12;
+            g.gain.setValueAtTime(0.18, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+            o.start(t); o.stop(t + 0.12);
           });
         } catch(e) {}
       }
 
       // Host message notification — three descending authoritative tones
-      function playHostChatSound() {
+      async function playHostChatSound() {
         if (chatSoundMuted) return;
         try {
           const ctx = getAudioCtx();
           if (!ctx) return;
+          if (ctx.state !== 'running') await ctx.resume();
+          const base = ctx.currentTime + 0.05;
           [523, 440, 349].forEach((freq, i) => {
             const o = ctx.createOscillator();
             const g = ctx.createGain();
             o.connect(g); g.connect(ctx.destination);
             o.frequency.value = freq; o.type = 'triangle';
-            const t = ctx.currentTime + i * 0.18;
+            const t = base + i * 0.18;
             g.gain.setValueAtTime(0.35, t);
             g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
-            o.start(t);
-            o.stop(t + 0.18);
+            o.start(t); o.stop(t + 0.18);
           });
         } catch(e) {}
       }
@@ -3300,42 +3303,65 @@
       sirenAudio.preload = 'auto';
 
       let sharedAudioCtx = null;
-      let audioUnlocked = false;
+      let silentOscStarted = false; // created only once
+      let sirenUnlocked = false;    // HTML Audio unlocked only once
 
       function getAudioCtx() {
         if (!sharedAudioCtx) {
           sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
+        // kick a resume — caller can await it if needed
         if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume();
         return sharedAudioCtx;
       }
 
-      // Unlock audio — safe to call multiple times, only runs once
+      // Called on every user gesture (no { once }) — keeps context alive after backgrounding
       function initAudio() {
-        if (audioUnlocked) return;
-        audioUnlocked = true;
         try {
-          const ctx = getAudioCtx();
-          // Keep AudioContext alive with a permanent silent oscillator
-          // (prevents iOS from auto-suspending it between sounds)
-          const silentGain = ctx.createGain();
-          silentGain.gain.value = 0;
-          silentGain.connect(ctx.destination);
-          const silentOsc = ctx.createOscillator();
-          silentOsc.connect(silentGain);
-          silentOsc.start();
+          // AudioContext must be created/resumed synchronously within gesture frame
+          if (!sharedAudioCtx) {
+            sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          }
+          sharedAudioCtx.resume(); // re-resume every time (handles post-background suspension)
+
+          // Silent oscillator — created only once, keeps context from auto-suspending
+          if (!silentOscStarted) {
+            silentOscStarted = true;
+            const silentGain = sharedAudioCtx.createGain();
+            silentGain.gain.value = 0;
+            silentGain.connect(sharedAudioCtx.destination);
+            const silentOsc = sharedAudioCtx.createOscillator();
+            silentOsc.connect(silentGain);
+            silentOsc.start();
+          }
         } catch(e) {}
-        // Unlock siren MP3
-        sirenAudio.play().then(() => {
-          sirenAudio.pause();
-          sirenAudio.currentTime = 0;
-        }).catch(() => {});
+
+        // Unlock HTML Audio (siren MP3) — must be in gesture frame, done once
+        if (!sirenUnlocked) {
+          sirenUnlocked = true;
+          sirenAudio.play().then(() => {
+            sirenAudio.pause();
+            sirenAudio.currentTime = 0;
+          }).catch(() => {});
+        }
       }
 
-      // Fallback: catch ANY first user interaction (covers session restore auto-login)
-      ['touchstart', 'touchend', 'click', 'keydown'].forEach(ev =>
-        document.addEventListener(ev, initAudio, { once: true, passive: true })
+      // Re-unlock on EVERY user gesture (not { once }) — handles re-suspension after backgrounding
+      ['touchstart', 'click', 'keydown'].forEach(ev =>
+        document.addEventListener(ev, initAudio, { passive: true })
       );
+
+      // When app comes back to foreground: resume context immediately
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) return;
+        if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+          sharedAudioCtx.resume().catch(() => {});
+        }
+        // Re-unlock siren in case it was released (iOS releases Audio on background)
+        if (sirenUnlocked) {
+          sirenAudio.play().then(() => { sirenAudio.pause(); sirenAudio.currentTime = 0; }).catch(() => {});
+        }
+      });
 
       function showAlertOverlay(title, msg) {
         document.getElementById('alert-overlay-title').textContent = title;
@@ -3355,7 +3381,10 @@
 
       function playSiren() {
         sirenAudio.currentTime = 0;
-        sirenAudio.play().catch(() => {});
+        sirenAudio.play().catch(() => {
+          // Retry once after 300 ms — helps on iOS if AudioSession not yet active
+          setTimeout(() => sirenAudio.play().catch(() => {}), 300);
+        });
       }
 
       function stopSiren() {
