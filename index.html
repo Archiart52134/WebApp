@@ -3238,7 +3238,24 @@
         });
       }
 
-      let sirenAudio = null;
+      // Pre-load siren so mobile browsers can play it without gesture at alarm time
+      let sirenAudio = new Audio('./siren.mp3');
+      sirenAudio.loop = true;
+      sirenAudio.volume = 1.0;
+      sirenAudio.preload = 'auto';
+
+      // Unlock audio on first user interaction (required by mobile browsers)
+      function _unlockSiren() {
+        sirenAudio.play().then(() => {
+          sirenAudio.pause();
+          sirenAudio.currentTime = 0;
+        }).catch(() => {});
+        document.removeEventListener('touchstart', _unlockSiren);
+        document.removeEventListener('click', _unlockSiren);
+      }
+      document.addEventListener('touchstart', _unlockSiren, { once: true });
+      document.addEventListener('click',      _unlockSiren, { once: true });
+
       function showAlertOverlay(title, msg) {
         document.getElementById('alert-overlay-title').textContent = title;
         document.getElementById('alert-overlay-msg').textContent = msg;
@@ -3256,19 +3273,13 @@
       }
 
       function playSiren() {
-        stopSiren();
-        sirenAudio = new Audio('./siren.mp3');
-        sirenAudio.volume = 1.0;
-        sirenAudio.loop = true;
+        sirenAudio.currentTime = 0;
         sirenAudio.play().catch(() => {});
       }
 
       function stopSiren() {
-        if (sirenAudio) {
-          sirenAudio.pause();
-          sirenAudio.currentTime = 0;
-          sirenAudio = null;
-        }
+        sirenAudio.pause();
+        sirenAudio.currentTime = 0;
       }
 
       // ══════════════════════════════════
