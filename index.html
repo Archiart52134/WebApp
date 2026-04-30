@@ -3232,7 +3232,7 @@
         });
       }
 
-      let sirenInterval = null;
+      let sirenAudio = null;
       function showAlertOverlay(title, msg) {
         document.getElementById('alert-overlay-title').textContent = title;
         document.getElementById('alert-overlay-msg').textContent = msg;
@@ -3247,28 +3247,18 @@
 
       function playSiren() {
         stopSiren();
-        try {
-          alertSirenCtx = new (window.AudioContext || window.webkitAudioContext)();
-          const osc = alertSirenCtx.createOscillator();
-          const gain = alertSirenCtx.createGain();
-          osc.connect(gain); gain.connect(alertSirenCtx.destination);
-          osc.type = 'sawtooth';
-          gain.gain.setValueAtTime(0.4, alertSirenCtx.currentTime);
-          // Sweep 800 → 1400 → 800 Hz repeatedly
-          const sweepDur = 0.7;
-          for (let i = 0; i < 20; i++) {
-            const t = alertSirenCtx.currentTime + i * sweepDur;
-            osc.frequency.setValueAtTime(800, t);
-            osc.frequency.linearRampToValueAtTime(1400, t + sweepDur * 0.5);
-            osc.frequency.linearRampToValueAtTime(800, t + sweepDur);
-          }
-          osc.start(alertSirenCtx.currentTime);
-          osc.stop(alertSirenCtx.currentTime + 20 * sweepDur);
-        } catch(e) {}
+        sirenAudio = new Audio('./siren.mp3');
+        sirenAudio.volume = 1.0;
+        sirenAudio.loop = true;
+        sirenAudio.play().catch(() => {});
       }
 
       function stopSiren() {
-        if (alertSirenCtx) { try { alertSirenCtx.close(); } catch(e) {} alertSirenCtx = null; }
+        if (sirenAudio) {
+          sirenAudio.pause();
+          sirenAudio.currentTime = 0;
+          sirenAudio = null;
+        }
       }
 
       // ══════════════════════════════════

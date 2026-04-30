@@ -1,7 +1,8 @@
 const CACHE_NAME = 'jagd-flucht-v8';
 const ASSETS = [
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/siren.mp3'
 ];
 
 self.addEventListener('install', (e) => {
