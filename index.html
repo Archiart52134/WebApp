@@ -2007,7 +2007,7 @@
     <div id="alert-overlay">
       <div id="alert-overlay-title"></div>
       <div id="alert-overlay-msg"></div>
-      <button id="alert-overlay-close" onclick="closeAlertOverlay()">✕ SCHLIESSEN</button>
+      <button id="alert-overlay-close" onclick="closeAlertOverlay()" style="display:none">✕ SCHLIESSEN</button>
     </div>
 
     <!-- PICKUP ZONE SIZE MENU -->
@@ -2888,6 +2888,7 @@
           document.getElementById("header-player-name").style.display = "none";
           document.getElementById("header-action-btns").style.display = "flex";
           document.getElementById("alert-send-btn").style.display = "flex";
+          document.getElementById("alert-overlay-close").style.display = "inline-block";
           document.getElementById("host-panel").style.display = "block";
           document.getElementById("player-panel").style.display = "none";
           document.getElementById("game-timer-bar").style.display = "flex";
@@ -3225,9 +3226,14 @@
       function listenToAlerts() {
         window._dbOnValue(window._dbRef(window._db, 'alerts/current'), (snap) => {
           const a = snap.val();
-          if (!a || !a.title) return;
-          // Only show alerts that arrived after we connected (within last 10 sec)
-          if (Date.now() - a.ts > 10000) return;
+          // Host removed the alert → close for everyone
+          if (!a || !a.title) {
+            document.getElementById('alert-overlay').classList.remove('show');
+            stopSiren();
+            return;
+          }
+          // Only show alerts that arrived recently (within last 15 sec)
+          if (Date.now() - a.ts > 15000) return;
           showAlertOverlay(a.title, a.msg || '');
         });
       }
@@ -3241,6 +3247,10 @@
       }
 
       function closeAlertOverlay() {
+        // Host removes the alert from Firebase → triggers close for everyone
+        if (myTeam === 'host') {
+          window._dbRemove(window._dbRef(window._db, 'alerts/current'));
+        }
         document.getElementById('alert-overlay').classList.remove('show');
         stopSiren();
       }
