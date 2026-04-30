@@ -2402,6 +2402,7 @@
               listenToPlayers(); listenToLocations(); listenToGameState();
               listenToZone(); listenToChat(); listenToMissions();
               startLocationTracking(); listenToAlerts();
+              listenForKick(); // detect if host removes this restored player
               toast('👋 Willkommen zurück, ' + myName);
             } else {
               clearSession();
@@ -2409,6 +2410,25 @@
           }).catch(() => clearSession());
           return true;
         } catch(e) { return false; }
+      }
+
+      // Standalone kick listener — call for any non-host player path that bypasses joinLobby()
+      function listenForKick() {
+        if (!myId || myTeam === 'host') return;
+        const db = window._db;
+        window._dbOnValue(window._dbRef(db, 'players/' + myId), (snap) => {
+          const p = snap.val();
+          if (!p || p.kicked) {
+            clearSession();
+            myTeam = null; myName = ''; initialized = false;
+            showScreen('screen-intro');
+            const nameEl2 = document.getElementById('lobby-name');
+            if (nameEl2) { nameEl2.value = ''; nameEl2.disabled = false; }
+            const joinBtn = document.querySelector('.lobby-box .btn-primary');
+            if (joinBtn) joinBtn.disabled = false;
+            toast('🚫 Du wurdest vom Spielleiter entfernt');
+          }
+        });
       }
 
       function joinLobby() {
