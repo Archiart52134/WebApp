@@ -4391,55 +4391,65 @@
         // Clear badge for the tab we just switched to
         const badge = document.getElementById("tab-badge-" + team);
         if (badge) badge.textContent = "";
-        tabPrevCounts[team] = Object.keys((latestChatData[team] || {})).length;
+        // Sync prevMsgCounts so we don't re-badge messages already seen
+        prevMsgCounts[team] = Object.values(latestChatData[team] || {}).length;
         renderChatMessages(latestChatData);
       }
 
       let latestChatData = {};
+      // Reliable JS-side message counters (not DOM data-attributes)
+      let prevMsgCounts = { chaser: 0, runner: 0 };
 
       function listenToChat() {
         const db = window._db;
         const dbRef = window._dbRef;
         const dbOnValue = window._dbOnValue;
 
-        // Listen to both team chats
         ["chaser", "runner"].forEach((team) => {
           dbOnValue(dbRef(db, "chat/" + team), (snapshot) => {
             const data = snapshot.val() || {};
             latestChatData[team] = data;
 
+            // Sort messages by timestamp for reliable slicing
+            const msgs = Object.values(data).sort((a, b) => a.ts - b.ts);
+            const msgCount = msgs.length;
+            const prev = prevMsgCounts[team];
             const relevantTeam = myTeam === "host" ? hostChatTab : myTeam;
-            const msgCount = Object.keys(data).length;
 
             if (team === relevantTeam) {
               renderChatMessages(latestChatData);
-              if (!chatOpen) {
-                const prevCount = parseInt(
-                  document.getElementById("chat-unread-badge").dataset.total || "0"
-                );
-                if (msgCount > prevCount) {
-                  unreadCount += msgCount - prevCount;
-                  document.getElementById("chat-unread-badge").textContent = unreadCount;
-                  document.getElementById("chat-unread-badge").classList.add("show");
-                  document.getElementById("chat-unread-badge").dataset.total = msgCount;
-                  // Check if any new message is from the host → different sound
-                  const msgs = Object.values(data).sort((a, b) => a.ts - b.ts);
-                  const newMsgs = msgs.slice(-( msgCount - prevCount));
-                  const hasHostMsg = newMsgs.some(m => m.senderTeam === 'host');
+              if (msgCount > prev) {
+                // Exact slice using index — no negative-slice ambiguity
+                const newMsgs = msgs.slice(prev);
+                // Ignore own messages (don't beep for yourself)
+                const incoming = newMsgs.filter(m => m.senderId !== myId);
+                if (incoming.length > 0) {
+                  // Unread badge — only when chat panel is closed
+                  if (!chatOpen) {
+                    unreadCount += incoming.length;
+                    const badge = document.getElementById("chat-unread-badge");
+                    badge.textContent = unreadCount;
+                    badge.classList.add("show");
+                  }
+                  // Sound — always play for incoming messages
+                  const hasHostMsg = incoming.some(m => m.senderTeam === 'host');
                   hasHostMsg ? playHostChatSound() : playChatSound();
                 }
-              } else {
-                document.getElementById("chat-unread-badge").dataset.total = msgCount;
               }
             } else if (myTeam === "host") {
               // Non-active tab: show badge on the tab button itself
-              const prev = tabPrevCounts[team] || 0;
               if (msgCount > prev) {
-                tabPrevCounts[team] = msgCount;
+                const newMsgs = msgs.slice(prev);
                 const badge = document.getElementById("tab-badge-" + team);
-                if (badge) badge.textContent = msgCount - prev;
+                if (badge) {
+                  const cur = parseInt(badge.textContent || "0");
+                  badge.textContent = cur + newMsgs.length;
+                }
               }
             }
+
+            // Always update the counter after processing
+            prevMsgCounts[team] = msgCount;
           });
         });
       }
