@@ -3199,6 +3199,7 @@
         toast(chatSoundMuted ? '🔕 Chat-Ton aus' : '🔔 Chat-Ton an');
       }
 
+      // Regular team chat notification — two quick high pings
       function playChatSound() {
         if (chatSoundMuted) return;
         try {
@@ -3213,6 +3214,26 @@
             g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.1);
             o.start(ctx.currentTime + i * 0.12);
             o.stop(ctx.currentTime + i * 0.12 + 0.12);
+          });
+        } catch(e) {}
+      }
+
+      // Host message notification — three descending authoritative tones
+      function playHostChatSound() {
+        if (chatSoundMuted) return;
+        try {
+          const ctx = getAudioCtx();
+          if (!ctx) return;
+          [523, 440, 349].forEach((freq, i) => {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g); g.connect(ctx.destination);
+            o.frequency.value = freq; o.type = 'triangle';
+            const t = ctx.currentTime + i * 0.18;
+            g.gain.setValueAtTime(0.35, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+            o.start(t);
+            o.stop(t + 0.18);
           });
         } catch(e) {}
       }
@@ -4381,7 +4402,11 @@
                   document.getElementById("chat-unread-badge").textContent = unreadCount;
                   document.getElementById("chat-unread-badge").classList.add("show");
                   document.getElementById("chat-unread-badge").dataset.total = msgCount;
-                  playChatSound();
+                  // Check if any new message is from the host → different sound
+                  const msgs = Object.values(data).sort((a, b) => a.ts - b.ts);
+                  const newMsgs = msgs.slice(-( msgCount - prevCount));
+                  const hasHostMsg = newMsgs.some(m => m.senderTeam === 'host');
+                  hasHostMsg ? playHostChatSound() : playChatSound();
                 }
               } else {
                 document.getElementById("chat-unread-badge").dataset.total = msgCount;
