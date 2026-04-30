@@ -2109,16 +2109,18 @@
       <div id="chat-panel">
         <div class="chat-header">
           <span id="chat-header-title">💬 TEAM-CHAT</span>
-          <span
-            style="
-              font-size: 0.75rem;
-              color: var(--muted);
-              font-family: 'DM Sans', sans-serif;
-              cursor: pointer;
-            "
-            onclick="toggleChat()"
-            >✕</span
-          >
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            <button
+              id="chat-clear-btn"
+              onclick="clearCurrentChat()"
+              title="Chat leeren"
+              style="display:none;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:2px 8px;font-size:0.7rem;cursor:pointer;font-family:'DM Sans',sans-serif;"
+            >🗑 Leeren</button>
+            <span
+              style="font-size:0.75rem;color:var(--muted);font-family:'DM Sans',sans-serif;cursor:pointer;"
+              onclick="toggleChat()"
+            >✕</span>
+          </div>
         </div>
         <!-- Host tabs (shown only for host) -->
         <div class="chat-tabs" id="chat-tabs" style="display: none">
@@ -2885,6 +2887,7 @@
           document.getElementById("game-timer-bar").style.display = "flex";
           document.getElementById("chat-tabs").style.display = "flex";
           document.getElementById("host-broadcast-area").style.display = "block";
+          document.getElementById("chat-clear-btn").style.display = "inline-block";
           document.getElementById("chat-header-title").textContent = "💬 Security CHAT";
           renderMarkerVisList();
           // Init GPS display values
@@ -4250,6 +4253,13 @@
         } else {
           panel.classList.remove("open");
         }
+      }
+
+      function clearCurrentChat() {
+        const team = myTeam === 'host' ? hostChatTab : myTeam;
+        if (!team) return;
+        window._dbRemove(window._dbRef(window._db, 'chat/' + team));
+        toast('🗑 Chat geleert');
       }
 
       function switchChatTab(team) {
