@@ -2382,7 +2382,7 @@
           // Check if player still exists in Firebase and re-enter
           window._dbGet(window._dbRef(window._db, 'players/' + myId)).then(snap => {
             const p = snap.val();
-            if (!p) { clearSession(); return; }
+            if (!p || p.kicked) { clearSession(); return; } // kicked or deleted — don't restore
             myTeam = p.team || s.myTeam;
             if (myTeam === 'host') {
               window._dbUpdate(window._dbRef(window._db, 'players/' + myId), { online: true, ts: Date.now() });
@@ -2424,10 +2424,21 @@
           lat: null, lng: null, online: true, ts: Date.now()
         });
 
-        // Listen for team assignment AND mid-game team swaps
+        // Listen for team assignment AND mid-game team swaps AND kick
         window._dbOnValue(window._dbRef(db, 'players/' + myId), (snap) => {
           const p = snap.val();
-          if (!p) return;
+          // Player was kicked by host
+          if (!p || p.kicked) {
+            clearSession();
+            myTeam = null; myName = ''; initialized = false;
+            showScreen('screen-intro');
+            const nameEl2 = document.getElementById('lobby-name');
+            nameEl2.value = ''; nameEl2.disabled = false;
+            const joinBtn = document.querySelector('.lobby-box .btn-primary');
+            if (joinBtn) joinBtn.disabled = false;
+            toast('🚫 Du wurdest vom Spielleiter entfernt');
+            return;
+          }
           // Initial team assignment (from pending)
           if (p.team && p.team !== 'pending' && myTeam === 'pending') {
             myTeam = p.team;
@@ -3189,7 +3200,8 @@
       function playChatSound() {
         if (chatSoundMuted) return;
         try {
-          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const ctx = getAudioCtx();
+          if (!ctx) return;
           [880, 1046].forEach((freq, i) => {
             const o = ctx.createOscillator();
             const g = ctx.createGain();
@@ -3238,23 +3250,33 @@
         });
       }
 
-      // Pre-load siren so mobile browsers can play it without gesture at alarm time
+      // ── Unified audio unlock for mobile ──────────────────────────────
       let sirenAudio = new Audio('./siren.mp3');
       sirenAudio.loop = true;
       sirenAudio.volume = 1.0;
       sirenAudio.preload = 'auto';
 
-      // Unlock audio on first user interaction (required by mobile browsers)
-      function _unlockSiren() {
+      let sharedAudioCtx = null;
+      function getAudioCtx() {
+        if (!sharedAudioCtx) {
+          sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume();
+        return sharedAudioCtx;
+      }
+
+      // On first user gesture: unlock both AudioContext and the siren Audio element
+      function _unlockAudio() {
+        // Unlock AudioContext (needed for chat beep)
+        try { getAudioCtx(); } catch(e) {}
+        // Unlock siren MP3
         sirenAudio.play().then(() => {
           sirenAudio.pause();
           sirenAudio.currentTime = 0;
         }).catch(() => {});
-        document.removeEventListener('touchstart', _unlockSiren);
-        document.removeEventListener('click', _unlockSiren);
       }
-      document.addEventListener('touchstart', _unlockSiren, { once: true });
-      document.addEventListener('click',      _unlockSiren, { once: true });
+      document.addEventListener('touchstart', _unlockAudio, { once: true });
+      document.addEventListener('click',      _unlockAudio, { once: true });
 
       function showAlertOverlay(title, msg) {
         document.getElementById('alert-overlay-title').textContent = title;
@@ -3652,7 +3674,7 @@
       // ══════════════════════════════════
       function playBeep(type) {
         try {
-          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const ctx = getAudioCtx(); if (!ctx) return;
 
           if (type === "start") {
             // Ascending beeps
@@ -3981,10 +4003,9 @@
       // ══════════════════════════════════
       function removePlayer(id) {
         const db = window._db;
-        const dbRef = window._dbRef;
-        const dbUpdate = window._dbUpdate;
-        dbUpdate(dbRef(db, "players/" + id), { online: false });
-        // Immediately remove marker
+        // Mark as kicked so player can't auto-rejoin and gets sent to intro screen
+        window._dbSet(window._dbRef(db, 'players/' + id), { kicked: true, online: false });
+        // Remove marker from map
         if (playerMarkers[id]) {
           map.removeLayer(playerMarkers[id]);
           delete playerMarkers[id];
@@ -4161,7 +4182,7 @@
 
       function playZoneBeep() {
         try {
-          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const ctx = getAudioCtx(); if (!ctx) return;
           // Two short sharp beeps
           [880, 880].forEach((freq, i) => {
             const o = ctx.createOscillator();
