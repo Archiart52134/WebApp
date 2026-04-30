@@ -3220,45 +3220,46 @@
       }
 
       // Regular team chat notification — two quick high pings
-      async function playChatSound() {
-        if (chatSoundMuted) return;
-        try {
-          const ctx = getAudioCtx();
-          if (!ctx) return;
-          if (ctx.state !== 'running') await ctx.resume();
-          const base = ctx.currentTime + 0.05; // 50 ms buffer so resume finishes
-          [880, 1046].forEach((freq, i) => {
+      // Play one beep via setTimeout — fresh currentTime each call, works after resume
+      function _beep(ctx, freq, type, gain, delayMs, durationMs) {
+        setTimeout(() => {
+          try {
             const o = ctx.createOscillator();
             const g = ctx.createGain();
             o.connect(g); g.connect(ctx.destination);
-            o.frequency.value = freq; o.type = 'sine';
-            const t = base + i * 0.12;
-            g.gain.setValueAtTime(0.18, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-            o.start(t); o.stop(t + 0.12);
-          });
-        } catch(e) {}
+            o.type = type;
+            o.frequency.value = freq;
+            const t = ctx.currentTime;
+            const dur = durationMs / 1000;
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(gain, t + 0.015);
+            g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+            o.start(t);
+            o.stop(t + dur + 0.02);
+          } catch(e) {}
+        }, delayMs);
+      }
+
+      function playChatSound() {
+        if (chatSoundMuted) return;
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        ctx.resume().then(() => {
+          _beep(ctx, 880,  'sine', 0.5,   0, 140);
+          _beep(ctx, 1046, 'sine', 0.5, 160, 140);
+        }).catch(() => {});
       }
 
       // Host message notification — three descending authoritative tones
-      async function playHostChatSound() {
+      function playHostChatSound() {
         if (chatSoundMuted) return;
-        try {
-          const ctx = getAudioCtx();
-          if (!ctx) return;
-          if (ctx.state !== 'running') await ctx.resume();
-          const base = ctx.currentTime + 0.05;
-          [523, 440, 349].forEach((freq, i) => {
-            const o = ctx.createOscillator();
-            const g = ctx.createGain();
-            o.connect(g); g.connect(ctx.destination);
-            o.frequency.value = freq; o.type = 'triangle';
-            const t = base + i * 0.18;
-            g.gain.setValueAtTime(0.35, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
-            o.start(t); o.stop(t + 0.18);
-          });
-        } catch(e) {}
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        ctx.resume().then(() => {
+          _beep(ctx, 523, 'triangle', 0.7,   0, 170);
+          _beep(ctx, 440, 'triangle', 0.7, 190, 170);
+          _beep(ctx, 349, 'triangle', 0.7, 380, 170);
+        }).catch(() => {});
       }
 
       // ══════════════════════════════════
@@ -3322,18 +3323,21 @@
           if (!sharedAudioCtx) {
             sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
           }
-          sharedAudioCtx.resume(); // re-resume every time (handles post-background suspension)
-
-          // Silent oscillator — created only once, keeps context from auto-suspending
-          if (!silentOscStarted) {
-            silentOscStarted = true;
-            const silentGain = sharedAudioCtx.createGain();
-            silentGain.gain.value = 0;
-            silentGain.connect(sharedAudioCtx.destination);
-            const silentOsc = sharedAudioCtx.createOscillator();
-            silentOsc.connect(silentGain);
-            silentOsc.start();
-          }
+          // Resume every time (handles post-background re-suspension)
+          // Start silent oscillator AFTER resume resolves — guarantees it runs on iOS
+          sharedAudioCtx.resume().then(() => {
+            if (!silentOscStarted) {
+              silentOscStarted = true;
+              try {
+                const silentGain = sharedAudioCtx.createGain();
+                silentGain.gain.value = 0;
+                silentGain.connect(sharedAudioCtx.destination);
+                const silentOsc = sharedAudioCtx.createOscillator();
+                silentOsc.connect(silentGain);
+                silentOsc.start();
+              } catch(e) {}
+            }
+          }).catch(() => {});
         } catch(e) {}
 
         // Unlock HTML Audio (siren MP3) silently — muted so nothing is heard
