@@ -3528,10 +3528,11 @@
           const row = document.createElement("div");
           row.className = "host-player-row";
           const isHost = p.team === "host";
+          const isSelf = id === myId; // current host's own row
           const colorClass = p.team === "runner" ? "blue"
             : p.team === "chaser" ? "red"
             : p.team === "host" ? "yellow"
-            : ""; // pending → no color
+            : "";
           const teamLabel = p.team === "runner" ? "Läufer"
             : p.team === "chaser" ? "Security"
             : p.team === "host" ? "Spielleiter"
@@ -3539,8 +3540,8 @@
           row.innerHTML = `
             <span class="pname ${colorClass}">● ${p.name} <span style="font-weight:300;font-size:0.7rem;opacity:0.7">${teamLabel}</span></span>
             <div class="host-player-actions">
-              ${isHost ? '' : `<button class="swap-btn" onclick="swapPlayerTeam('${id}','${p.team}')">⇄ Wechseln</button>`}
-              ${isHost ? '' : `<button class="del-btn" onclick="removePlayer('${id}')">✕</button>`}
+              ${(!isSelf && !isHost) ? `<button class="swap-btn" onclick="swapPlayerTeam('${id}','${p.team}')">⇄ Wechseln</button>` : ''}
+              ${!isSelf ? `<button class="del-btn" onclick="removePlayer('${id}')">✕</button>` : ''}
             </div>
           `;
           hostList.appendChild(row);
