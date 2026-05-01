@@ -3493,29 +3493,34 @@
         const hostList = document.getElementById("host-players-list");
         if (!hostList) return;
         hostList.innerHTML = "";
-        Object.entries(data).forEach(([id, p]) => {
-          if (!p.online) return;
+
+        // Sort: host → chaser → runner → pending
+        const teamOrder = { host: 0, chaser: 1, runner: 2, pending: 3 };
+        const sorted = Object.entries(data)
+          .filter(([, p]) => p.online)
+          .sort(([, a], [, b]) =>
+            (teamOrder[a.team] ?? 9) - (teamOrder[b.team] ?? 9)
+          );
+
+        sorted.forEach(([id, p]) => {
           const row = document.createElement("div");
           row.className = "host-player-row";
-          const colorClass =
-            p.team === "runner"
-              ? "blue"
-              : p.team === "chaser"
-              ? "red"
-              : "yellow";
-          const teamLabel =
-            p.team === "runner"
-              ? "Läufer"
-              : p.team === "chaser"
-              ? "Security"
-              : "Leiter";
+          const isHost = p.team === "host";
+          const colorClass = p.team === "runner" ? "blue"
+            : p.team === "chaser" ? "red"
+            : p.team === "host" ? "yellow"
+            : ""; // pending → no color
+          const teamLabel = p.team === "runner" ? "Läufer"
+            : p.team === "chaser" ? "Security"
+            : p.team === "host" ? "Spielleiter"
+            : "Wartend";
           row.innerHTML = `
-      <span class="pname ${colorClass}">● ${p.name} <span style="font-weight:300;font-size:0.7rem;opacity:0.7">${teamLabel}</span></span>
-      <div class="host-player-actions">
-        <button class="swap-btn" onclick="swapPlayerTeam('${id}','${p.team}')">⇄ Wechseln</button>
-        <button class="del-btn" onclick="removePlayer('${id}')">✕</button>
-      </div>
-    `;
+            <span class="pname ${colorClass}">● ${p.name} <span style="font-weight:300;font-size:0.7rem;opacity:0.7">${teamLabel}</span></span>
+            <div class="host-player-actions">
+              ${isHost ? '' : `<button class="swap-btn" onclick="swapPlayerTeam('${id}','${p.team}')">⇄ Wechseln</button>`}
+              ${isHost ? '' : `<button class="del-btn" onclick="removePlayer('${id}')">✕</button>`}
+            </div>
+          `;
           hostList.appendChild(row);
         });
       }
