@@ -1,4 +1,4 @@
-$port = 3000
+$port = if ($env:PORT) { [int]$env:PORT } else { 3000 }
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$port/")
