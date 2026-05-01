@@ -2297,7 +2297,8 @@
       // Send throttle intervals (ms) — how often GPS is pushed to Firebase
       let sendIntervalRunner = 10000; // runners send their position every N ms
       let sendIntervalChaser = 10000; // chasers send their position every N ms
-      let gpsWatchId = null;          // single watchPosition handle
+      let gpsWatchId = null;          // setTimeout handle for periodic pings
+      let hostMovementWatchId = null; // optional watchPosition (host realtime only)
       let lastGpsSentTs = 0;          // last time THIS player sent location
       let gameActive = false;
       let gameStartTime = null;
@@ -3666,7 +3667,9 @@
             else {
               // Reconnect: game already ended — reset UI
               if (gameTimerInterval) { clearInterval(gameTimerInterval); gameTimerInterval = null; }
-              if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
+              if (gpsWatchId !== null) { clearTimeout(gpsWatchId); gpsWatchId = null; }
+              if (hostMovementWatchId !== null) { navigator.geolocation.clearWatch(hostMovementWatchId); hostMovementWatchId = null; }
+              lastGpsSentTs = -1; // signal tracking stopped
               if (myTeam === "host") {
                 document.getElementById("btn-start-game").style.display = "inline-flex";
                 document.getElementById("btn-end-game").style.display = "none";
@@ -4367,43 +4370,64 @@
       // GEOLOCATION TRACKING
       // ══════════════════════════════════
       function sendLocation(pos) {
+        lastGpsSentTs = Date.now();
         window._dbUpdate(window._dbRef(window._db, 'players/' + myId), {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
-          ts: Date.now(),
+          ts: lastGpsSentTs,
         });
         checkPlayerInZone(pos.coords.latitude, pos.coords.longitude);
       }
 
       function startLocationTracking() {
         if (!navigator.geolocation) { toast("GPS nicht verfügbar"); return; }
-        if (gpsWatchId !== null) return; // already tracking
 
-        // Single watchPosition for all roles — throttling done inside callback
-        gpsWatchId = navigator.geolocation.watchPosition((pos) => {
-          const now = Date.now();
-          let interval;
-          if (myTeam === 'host') {
-            // Host: realtime when Echtzeit ON, otherwise every 15s
-            interval = hostRealtimeMode ? 0 : 15000;
-          } else if (myTeam === 'runner') {
-            interval = sendIntervalRunner;
-          } else if (myTeam === 'chaser') {
-            interval = sendIntervalChaser;
-          } else {
-            interval = 15000;
-          }
-          if (now - lastGpsSentTs >= interval) {
-            lastGpsSentTs = now;
-            sendLocation(pos);
-          }
-        }, null, { enableHighAccuracy: true, maximumAge: 0 });
+        // How long to wait before next send (read fresh every time → slider changes apply instantly)
+        function getSendInterval() {
+          if (myTeam === 'host') return hostRealtimeMode ? 2000 : 15000;
+          if (myTeam === 'runner') return Math.max(sendIntervalRunner, 1000);
+          if (myTeam === 'chaser') return Math.max(sendIntervalChaser, 1000);
+          return 15000;
+        }
 
-        // Send current position immediately on start
-        navigator.geolocation.getCurrentPosition(
-          (pos) => { lastGpsSentTs = Date.now(); sendLocation(pos); },
-          null,
-          { enableHighAccuracy: true, maximumAge: 10000 }
+        function pingPosition() {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => sendLocation(pos),
+            (err) => console.warn('GPS error:', err.code, err.message),
+            { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+          );
+        }
+
+        function scheduleNext() {
+          if (lastGpsSentTs === -1) return; // tracking stopped
+          gpsWatchId = setTimeout(() => {
+            pingPosition();
+            scheduleNext();
+          }, getSendInterval());
+        }
+
+        // Cancel any previous tracking
+        if (gpsWatchId !== null) { clearTimeout(gpsWatchId); gpsWatchId = null; }
+        lastGpsSentTs = 0;
+
+        // Send immediately, then schedule recurring sends
+        pingPosition();
+        scheduleNext();
+
+        // Bonus: watchPosition for host in Echtzeit (movement-driven updates between heartbeats)
+        if (hostMovementWatchId !== null) navigator.geolocation.clearWatch(hostMovementWatchId);
+        hostMovementWatchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            // Only host with Echtzeit gets the extra movement-based updates
+            if (myTeam === 'host' && hostRealtimeMode) {
+              const now = Date.now();
+              if (now - lastGpsSentTs >= 1000) { // hard cap: 1 update/sec
+                sendLocation(pos);
+              }
+            }
+          },
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 0 }
         );
       }
 
