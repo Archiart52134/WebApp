@@ -2441,7 +2441,7 @@
       }
 
       function joinLobby() {
-        initAudio(); // unlock audio on guaranteed user gesture
+        initAudio(); unlockSiren(); // unlock AudioContext + siren on guaranteed user gesture
         const nameEl = document.getElementById('lobby-name');
         myName = nameEl.value.trim();
         if (!myName) { toast('Bitte gib deinen Namen ein'); return; }
@@ -2519,7 +2519,7 @@
       }
 
       function joinAsHost() {
-        initAudio(); // unlock audio on guaranteed user gesture
+        initAudio(); unlockSiren(); // unlock AudioContext + siren on guaranteed user gesture
         const nameEl = document.getElementById('lobby-name');
         myName = nameEl.value.trim() || 'Spielleiter';
         if (!window._firebaseReady) { toast('Firebase nicht verbunden'); return; }
@@ -3342,15 +3342,13 @@
         return sharedAudioCtx;
       }
 
-      // Called on every user gesture (no { once }) — keeps context alive after backgrounding
+      // Resumes AudioContext on every user gesture — keeps it alive after backgrounding
+      // Does NOT touch the siren (to avoid accidental playback)
       function initAudio() {
         try {
-          // AudioContext must be created/resumed synchronously within gesture frame
           if (!sharedAudioCtx) {
             sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
           }
-          // Resume every time (handles post-background re-suspension)
-          // Start silent oscillator AFTER resume resolves — guarantees it runs on iOS
           sharedAudioCtx.resume().then(() => {
             if (!silentOscStarted) {
               silentOscStarted = true;
@@ -3365,27 +3363,28 @@
             }
           }).catch(() => {});
         } catch(e) {}
-
-        // Unlock HTML Audio (siren MP3) silently — muted so nothing is heard
-        if (!sirenUnlocked) {
-          sirenUnlocked = true;
-          sirenAudio.muted = true;
-          sirenAudio.play().then(() => {
-            sirenAudio.pause();
-            sirenAudio.currentTime = 0;
-            sirenAudio.muted = false;
-          }).catch(() => {
-            sirenAudio.muted = false;
-          });
-        }
       }
 
-      // Re-unlock on EVERY user gesture (not { once }) — handles re-suspension after backgrounding
+      // Pre-warm siren ONCE — call only from join buttons (guaranteed user gesture)
+      function unlockSiren() {
+        if (sirenUnlocked) return;
+        sirenUnlocked = true;
+        sirenAudio.muted = true;
+        sirenAudio.play().then(() => {
+          sirenAudio.pause();
+          sirenAudio.currentTime = 0;
+          sirenAudio.muted = false;
+        }).catch(() => {
+          sirenAudio.muted = false;
+        });
+      }
+
+      // Resume AudioContext on every gesture (not siren — only AudioContext)
       ['touchstart', 'click', 'keydown'].forEach(ev =>
         document.addEventListener(ev, initAudio, { passive: true })
       );
 
-      // When app comes back to foreground: only resume AudioContext (never touch siren here)
+      // Resume when returning from background
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) return;
         if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
