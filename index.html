@@ -2287,20 +2287,22 @@
       let chatSoundMuted = false;
       let zoneEditMarkers = [];
       let zoneEditMode = false;
-      let myRealtimeWatch = null;
       let alertSirenCtx = null;
-      // Display throttle intervals (ms) — set from gameState sliders
+      // Display throttle intervals (ms) — how often markers refresh on the MAP
       let dispIntervalOwnRunner  = 10000; // runners seeing own team
       let dispIntervalOwnChaser  = 10000; // chasers seeing own team
       let dispIntervalOppRunner  = 30000; // chasers seeing runners
       let dispIntervalOppChaser  = 30000; // runners seeing chasers
       const playerMarkerLastUpdate = {}; // id → timestamp of last visual update
-      let updateIntervalMs = 30000;
+      // Send throttle intervals (ms) — how often GPS is pushed to Firebase
+      let sendIntervalRunner = 10000; // runners send their position every N ms
+      let sendIntervalChaser = 10000; // chasers send their position every N ms
+      let gpsWatchId = null;          // single watchPosition handle
+      let lastGpsSentTs = 0;          // last time THIS player sent location
       let gameActive = false;
       let gameStartTime = null;
       let gameTimerInterval = null;
       let gameEndedAt = null;
-      let locationTimerHandle = null;
       let initialized = false;
       let isSatellite = false;
       let baseTileLayer = null;
@@ -3628,14 +3630,11 @@
           const state = snapshot.val();
           if (!state) return;
 
-          // Per-team intervals for players (own GPS send frequency)
-          if (myTeam === "runner" && state.visOwnRunner) {
-            updateIntervalMs = state.visOwnRunner * 1000;
-          } else if (myTeam === "chaser" && state.visOwnChaser) {
-            updateIntervalMs = state.visOwnChaser * 1000;
-          }
+          // GPS send intervals — how often each team pushes their position to Firebase
+          if (state.visOwnRunner) sendIntervalRunner = state.visOwnRunner * 1000;
+          if (state.visOwnChaser) sendIntervalChaser = state.visOwnChaser * 1000;
 
-          // Store display intervals for marker throttling in updatePlayerMarkers
+          // Display intervals — how often markers refresh on the map (for viewers)
           if (state.intervalRunner)  dispIntervalOppRunner = state.intervalRunner * 1000;
           if (state.intervalChaser)  dispIntervalOppChaser = state.intervalChaser * 1000;
           if (state.visOwnRunner)    dispIntervalOwnRunner = state.visOwnRunner * 1000;
@@ -3668,7 +3667,7 @@
             else {
               // Reconnect: game already ended — reset UI
               if (gameTimerInterval) { clearInterval(gameTimerInterval); gameTimerInterval = null; }
-              if (locationTimerHandle) { clearTimeout(locationTimerHandle); locationTimerHandle = null; }
+              if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
               if (myTeam === "host") {
                 document.getElementById("btn-start-game").style.display = "inline-flex";
                 document.getElementById("btn-end-game").style.display = "none";
@@ -3918,20 +3917,9 @@
       }
 
       function applyRealtimeMode(active) {
-        if (active) {
-          if (!myRealtimeWatch && navigator.geolocation) {
-            myRealtimeWatch = navigator.geolocation.watchPosition((pos) => {
-              window._dbUpdate(window._dbRef(window._db, 'players/' + myId), {
-                lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now()
-              });
-            }, null, { enableHighAccuracy: true, maximumAge: 0 });
-          }
-        } else {
-          if (myRealtimeWatch !== null) {
-            navigator.geolocation.clearWatch(myRealtimeWatch);
-            myRealtimeWatch = null;
-          }
-        }
+        hostRealtimeMode = active;
+        // The watchPosition in startLocationTracking() already reads hostRealtimeMode
+        // to decide the send interval — no separate watch needed
       }
 
       // ══════════════════════════════════
@@ -4379,40 +4367,44 @@
       // ══════════════════════════════════
       // GEOLOCATION TRACKING
       // ══════════════════════════════════
+      function sendLocation(pos) {
+        window._dbUpdate(window._dbRef(window._db, 'players/' + myId), {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          ts: Date.now(),
+        });
+        checkPlayerInZone(pos.coords.latitude, pos.coords.longitude);
+      }
+
       function startLocationTracking() {
-        if (!navigator.geolocation) {
-          toast("GPS nicht verfügbar");
-          return;
-        }
+        if (!navigator.geolocation) { toast("GPS nicht verfügbar"); return; }
+        if (gpsWatchId !== null) return; // already tracking
 
-        function sendLocation(pos) {
-          const db = window._db;
-          const dbRef = window._dbRef;
-          const dbUpdate = window._dbUpdate;
-          dbUpdate(dbRef(db, "players/" + myId), {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            ts: Date.now(),
-          });
-          // Check if player is inside the game zone
-          checkPlayerInZone(pos.coords.latitude, pos.coords.longitude);
-        }
+        // Single watchPosition for all roles — throttling done inside callback
+        gpsWatchId = navigator.geolocation.watchPosition((pos) => {
+          const now = Date.now();
+          let interval;
+          if (myTeam === 'host') {
+            // Host: realtime when Echtzeit ON, otherwise every 15s
+            interval = hostRealtimeMode ? 0 : 15000;
+          } else if (myTeam === 'runner') {
+            interval = sendIntervalRunner;
+          } else if (myTeam === 'chaser') {
+            interval = sendIntervalChaser;
+          } else {
+            interval = 15000;
+          }
+          if (now - lastGpsSentTs >= interval) {
+            lastGpsSentTs = now;
+            sendLocation(pos);
+          }
+        }, null, { enableHighAccuracy: true, maximumAge: 0 });
 
-        navigator.geolocation.getCurrentPosition(sendLocation);
-
-        function scheduleUpdate() {
-          navigator.geolocation.getCurrentPosition(sendLocation);
-          locationTimerHandle = setTimeout(scheduleUpdate, updateIntervalMs);
-        }
-        locationTimerHandle = setTimeout(scheduleUpdate, updateIntervalMs);
-
-        // High-frequency watch for realtime display (host always sees real-time)
-        navigator.geolocation.watchPosition(
-          (pos) => {
-            if (myTeam === "host") sendLocation(pos);
-          },
+        // Send current position immediately on start
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { lastGpsSentTs = Date.now(); sendLocation(pos); },
           null,
-          { enableHighAccuracy: true, maximumAge: 0 }
+          { enableHighAccuracy: true, maximumAge: 10000 }
         );
       }
 
