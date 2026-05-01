@@ -413,17 +413,22 @@
       }
 
       .btn-host {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
         background: transparent;
         border: 1px solid var(--border);
         color: var(--muted);
-        padding: 0.6rem 1.5rem;
-        border-radius: 8px;
-        font-family: "DM Sans", sans-serif;
-        font-size: 0.8rem;
+        width: 2.8rem;
+        height: 2.8rem;
+        border-radius: 50%;
+        font-size: 1.2rem;
         cursor: pointer;
-        letter-spacing: 2px;
-        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         transition: all 0.2s;
+        z-index: 10;
       }
       .btn-host:hover {
         border-color: var(--yellow);
@@ -1985,7 +1990,7 @@
       <div class="lobby-box">
         <input type="text" id="lobby-name" placeholder="Dein Name..." maxlength="20" style="text-align:center;font-size:1rem;margin-bottom:0.8rem;"/>
         <button class="btn-primary blue" onclick="joinLobby()" style="margin-bottom:0.5rem;">BEITRETEN</button>
-        <button class="btn-host" onclick="joinAsHost()">⭐ Als Spielleiter</button>
+        <button class="btn-host" onclick="joinAsHost()" title="Als Spielleiter beitreten">⭐</button>
         <div id="lobby-players-list" style="margin-top:1rem;width:100%;"></div>
       </div>
     </div>
