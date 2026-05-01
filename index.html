@@ -3535,6 +3535,14 @@
         });
 
         Object.entries(data).forEach(([id, p]) => {
+          // Host marker: only visible to the host and only in Echtzeit mode
+          if (p.team === 'host') {
+            if (myTeam !== 'host' || !hostRealtimeMode) {
+              if (playerMarkers[id]) { map.removeLayer(playerMarkers[id]); delete playerMarkers[id]; }
+              return;
+            }
+          }
+
           if (!p.online || !p.lat || !p.lng) {
             if (playerMarkers[id]) {
               map.removeLayer(playerMarkers[id]);
