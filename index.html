@@ -2314,7 +2314,7 @@
         prison: { host: true, runner: false, chaser: true },
         'runners-start': { host: true, runner: true, chaser: false },
         'chasers-start': { host: true, runner: false, chaser: true },
-        pickup: { host: true, runner: false, chaser: false },
+        pickup: { host: true, runner: true, chaser: false },
         dropoff: { host: true, runner: true, chaser: false },
         zone: { host: true, runner: true, chaser: true }
       };
@@ -3152,13 +3152,15 @@
             if (type === '_teamVis') return;
             if (!loc || !loc.lat) return;
 
-            // Always draw pickup zone circle regardless of marker visibility
+            // Pickup zone circle — visible to runners and host only, not chasers
             if (type === 'pickup') {
               const r = (loc.pickupRadius !== undefined) ? loc.pickupRadius : 30;
               pickupZoneRadius = r;
               const cLat = (loc.pickupCenterLat !== undefined) ? loc.pickupCenterLat : loc.lat;
               const cLng = (loc.pickupCenterLng !== undefined) ? loc.pickupCenterLng : loc.lng;
-              drawPickupZone(cLat, cLng, r);
+              if (myTeam === 'runner' || myTeam === 'host') {
+                drawPickupZone(cLat, cLng, r);
+              }
             }
 
             // Check per-team visibility (controls whether marker icon is shown)
@@ -3639,12 +3641,14 @@
           if (state.visOwnRunner)    dispIntervalOwnRunner = state.visOwnRunner * 1000;
           if (state.visOwnChaser)    dispIntervalOwnChaser = state.visOwnChaser * 1000;
 
-          // Echtzeit mode — applies to ALL players
+          // Echtzeit mode — host only (players use their own slider intervals)
           if (state.realtimeMode !== undefined) {
-            applyRealtimeMode(state.realtimeMode);
+            if (myTeam === 'host') {
+              applyRealtimeMode(state.realtimeMode);
+              hostRealtimeMode = state.realtimeMode;
+            }
             const btn = document.getElementById('realtime-btn');
             if (btn) btn.className = 'realtime-btn' + (state.realtimeMode ? ' active' : '');
-            if (myTeam === 'host') hostRealtimeMode = state.realtimeMode;
           }
 
           if (state.active && !gameActive) {
