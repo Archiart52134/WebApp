@@ -41,6 +41,7 @@
         get,
         push,
         remove,
+        onDisconnect,
       } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
       const firebaseConfig = {
@@ -64,6 +65,7 @@
       window._dbGet = get;
       window._dbPush = push;
       window._dbRemove = remove;
+      window._dbOnDisconnect = onDisconnect;
       window._firebaseReady = true;
       window.dispatchEvent(new Event("firebase-ready"));
     </script>
@@ -2390,6 +2392,7 @@
             myTeam = p.team || s.myTeam;
             if (myTeam === 'host') {
               window._dbUpdate(window._dbRef(window._db, 'players/' + myId), { online: true, ts: Date.now() });
+              registerDisconnect();
               initGameScreen();
               showScreen('screen-game');
               initMap();
@@ -2499,6 +2502,20 @@
         document.querySelector('.lobby-box .btn-primary').disabled = true;
       }
 
+      // Register Firebase onDisconnect + browser unload — marks player offline on exit
+      function registerDisconnect() {
+        const db = window._db;
+        const playerRef = window._dbRef(db, 'players/' + myId);
+        // Firebase side: fires even when browser is killed or network drops
+        window._dbOnDisconnect(playerRef).update({ online: false });
+        // Browser side: fires on normal tab close / navigation
+        const markOffline = () => {
+          window._dbUpdate(playerRef, { online: false });
+        };
+        window.addEventListener('pagehide', markOffline);
+        window.addEventListener('beforeunload', markOffline);
+      }
+
       function joinAsHost() {
         initAudio(); // unlock audio on guaranteed user gesture
         const nameEl = document.getElementById('lobby-name');
@@ -2512,6 +2529,7 @@
           lat: null, lng: null, online: true, ts: Date.now()
         });
 
+        registerDisconnect();
         saveSession();
         initGameScreen();
         showScreen('screen-game');
